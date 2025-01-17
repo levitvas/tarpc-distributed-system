@@ -1,0 +1,13 @@
+[package]
+name = "tarpc-distributed-system"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tokio = { version = "1.43.0", features = ["full"] }
+tarpc = { version = "0.35.0", features = ["full"] }
+serde = {version = "1.0.217", features = ["default"]}
+serde_json = "1.0.135"
+axum = "0.8.1"
+tracing = "0.1.41"
+tracing-subscriber = "0.3.19"
