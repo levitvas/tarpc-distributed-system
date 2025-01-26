@@ -74,7 +74,6 @@ impl NodeRpc for NodeRpcServer {
             let remaining_client = self.node.rpc.get_client(next).await.unwrap();
             remaining_client.change_next(_context, next).await.unwrap();
             remaining_client.change_prev(_context, next).await.unwrap();
-            remaining_client.change_nnext(_context, next).await.unwrap();
         } else if prev == nnext {
             // 3-node topology
             // Update the next node to point to itself
@@ -89,19 +88,12 @@ impl NodeRpc for NodeRpcServer {
             // update previous node's next pointer
             let prev_client = self.node.rpc.get_client(prev).await.unwrap();
             prev_client.change_next(_context, next).await.unwrap();
+            prev_client.change_nnext(_context, nnext).await.unwrap();
+            prev_client.change_nnext_of_prev(_context, next).await.unwrap();
 
             // update next node's prev pointer
             let next_client = self.node.rpc.get_client(next).await.unwrap();
             next_client.change_prev(_context, prev).await.unwrap();
-
-            // update previous node's nnext pointer
-            // only update nnext if it's not pointing to the leaving node
-            if nnext != self.node.addr {
-                prev_client.change_nnext(_context, nnext).await.unwrap();
-            } else {
-                // if nnext is the leaving node, set it to next instead
-                prev_client.change_nnext(_context, next).await.unwrap();
-            }
         }
         
         true
@@ -148,6 +140,16 @@ impl NodeRpc for NodeRpcServer {
         }
     }
 
+    async fn change_nnext_of_prev(self, _context: Context, next: SocketAddr) -> bool {
+        tracing::debug!("Node {} changing nnext of Prev to {}", self.node.id.bold().green(), next.to_string().bold().yellow());
+        let prev = {
+            let neighbor_info = self.node.neighbor_info.read().unwrap();
+            neighbor_info.prev
+        };
+        let prev_client = self.node.rpc.get_client(prev).await.unwrap();
+        prev_client.change_nnext(_context, next).await.unwrap()
+    }
+
     async fn missing_node(self, context: Context, missing_node: SocketAddr) -> bool {
         tracing::debug!("Node {} fixing topology with missing node: {}", self.node.id.bold().green(), missing_node.to_string().bold().red());
         if !self.node.repairing.read().unwrap().clone() {
@@ -174,6 +176,7 @@ impl NodeRpc for NodeRpcServer {
 }
 
 pub async fn spawn(fut: impl std::future::Future<Output = ()> + Send + 'static) {
+    tracing::debug!("Spawning a new task");
     tokio::spawn(fut);
 }
 
@@ -184,19 +187,25 @@ pub async fn serve_rpc(node: Arc<Node>) -> Result<(), Box<dyn std::error::Error>
     let addr = listener.local_addr().ip();
     let port = listener.local_addr().port();
     tracing::info!("RPC server running on {}:{}", addr, port);
+    let mut stop_signal = node.stop_signal.subscribe();
 
-    listener
-        .filter_map(|r| future::ready(r.ok()))
-        .map(BaseChannel::with_defaults)
-        // Limit channels to 1 per IP
-        // .max_channels_per_key(1, |t| t.transport().peer_addr().unwrap().ip())
-        .map(|channel| {
-            channel.execute(server.clone().serve())
-                .for_each(spawn)
-        })
-        .buffer_unordered(10)
-        .for_each(|_| async {})
-        .await;
+    tokio::select! {
+        _ = async {
+            listener
+                .filter_map(|r| future::ready(r.ok()))
+                .map(BaseChannel::with_defaults)
+                .map(|channel| {
+                    channel.execute(server.clone().serve())
+                        .for_each(spawn)
+                })
+                .buffer_unordered(10)
+                .for_each(|_| async {})
+                .await;
+        } => {},
+        _ = stop_signal.changed() => {
+            tracing::info!("RPC server is shutting down");
+        }
+    }
 
     Ok(())
 }

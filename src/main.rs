@@ -37,7 +37,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing::info!("Starting node with address: {}", rpc_addr);
 
     // Create node and start server
-    let node = Arc::new(node::Node::new(format!("node_{}", port), rpc_addr));
+    let node = node::Node::new(format!("node_{}", port), rpc_addr);
     
     let rpc_node = node.clone();
     tokio::spawn(async move {

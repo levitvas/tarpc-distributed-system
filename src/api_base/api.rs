@@ -37,12 +37,11 @@ async fn leave(State(node): State<Arc<Node>>) -> StatusCode {
 
 // Kill a node (simulate crash)
 async fn kill(
-    State(node): State<Arc<Node>>,
-    Json(payload): Json<KillReviveRequest>,
+    State(node): State<Arc<Node>>
 ) -> StatusCode {
-    tracing::info!("Killing node {}", payload.node_id.bold().red());
+    tracing::info!("Killing node {}", node.id.bold().red());
 
-    match node.kill(&payload.node_id).await {
+    match node.kill(node.addr).await {
         Ok(_) => StatusCode::OK,
         Err(_) => StatusCode::INTERNAL_SERVER_ERROR,
     }
@@ -50,12 +49,11 @@ async fn kill(
 
 // Revive a node
 async fn revive(
-    State(node): State<Arc<Node>>,
-    Json(payload): Json<KillReviveRequest>,
+    State(node): State<Arc<Node>>
 ) -> StatusCode {
-    tracing::info!("Reviving node {}", payload.node_id.bold().green());
+    tracing::info!("Reviving node {}", node.id.bold().yellow());
 
-    match node.revive(&payload.node_id).await {
+    match node.revive(node.addr).await {
         Ok(_) => StatusCode::OK,
         Err(_) => StatusCode::INTERNAL_SERVER_ERROR,
     }

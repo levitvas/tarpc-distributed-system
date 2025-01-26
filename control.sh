@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Hardcoded list of IP:port combinations
-declare -a servers=("127.0.0.1:2010" "127.0.0.1:2020" "127.0.0.1:2030")
+declare -a servers=("127.0.0.1:2010" "127.0.0.1:2020" "127.0.0.1:2030" "127.0.0.1:2040" "127.0.0.1:2050")
 
 # Function to send a GET request
 send_get_request() {
@@ -32,7 +32,7 @@ while true; do
         echo "$i: ${servers[$i]}"
     done
 
-    echo "Enter the request type (g/s/j/l) and server indices:"
+    echo "Enter the request type (g/s/j/l/k) and server indices:"
     read -r request_type arg1 arg2
 
     case $request_type in
@@ -76,6 +76,29 @@ while true; do
             url="http://$(increment_port "${servers[$arg1]}")/leave"
             echo "Sending POST request to $url"
             send_post_request "$url"
+            ;;
+        k)
+            # POST /kill request
+            if [[ -z "${servers[$arg1]}" ]]; then
+                echo "Invalid index. Please enter a valid server index."
+                continue
+            fi
+            url="http://$(increment_port "${servers[$arg1]}")/kill"
+            echo "Sending POST request to $url"
+            send_post_request "$url"
+            ;;
+        r)
+            # POST /revive request
+            if [[ -z "${servers[$arg1]}" ]]; then
+                echo "Invalid index. Please enter a valid server index."
+                continue
+            fi
+            url="http://$(increment_port "${servers[$arg1]}")/revive"
+            echo "Sending POST request to $url"
+            send_post_request "$url"
+            ;;
+        c)
+            # Create the topology by sending join requests
             ;;
         *)
             echo "Invalid request type. Use 'g' for GET /health, 'p' for POST /status, or 'j' for join."

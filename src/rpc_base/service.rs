@@ -11,5 +11,6 @@ pub trait NodeRpc {
     async fn change_next(next: SocketAddr) -> bool;
     async fn change_nnext(nnext: SocketAddr) -> bool;
     async fn change_prev(prev: SocketAddr) -> bool;
+    async fn change_nnext_of_prev(next: SocketAddr) -> bool;
     async fn missing_node(addr: SocketAddr) -> bool;
 }
