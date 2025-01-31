@@ -79,9 +79,8 @@ Available commands:
 ./target/release/distributed_system 127.0.0.1 2030 C
 
 # In control script:
-j 0 1  # Join node 0 to 1
-j 1 2  # Join node 1 to 2
-j 2 0  # Join node 2 to 0
+j 1 0  # Join node 0 to 1
+j 2 1  # Join node 1 to 2
 ```
 
 ## Implementation Details
