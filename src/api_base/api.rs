@@ -18,7 +18,7 @@ pub struct HealthResponse {
 
 #[derive(Debug, Deserialize)]
 pub struct DelayConfig {
-    delay_ms: u64,
+    delay_ms: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -73,8 +73,9 @@ async fn set_delay(
     State(node): State<Arc<Node>>,
     Json(config): Json<DelayConfig>,
 ) -> StatusCode {
-    tracing::debug!("Delay update requested for node {}: {}ms", node.id, config.delay_ms);
-    node.set_delay(config.delay_ms);
+    let delay_ms: u64 = config.delay_ms.parse().expect("Invalid time format");;
+    tracing::debug!("Delay update requested for node {}: {}ms", node.id, delay_ms);
+    node.set_delay(delay_ms);
     StatusCode::OK
 }
 

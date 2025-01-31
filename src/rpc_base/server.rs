@@ -29,12 +29,12 @@ impl NodeRpc for NodeRpcServer {
         true
     }
     async fn handle_resource_msg(self, _: context::Context, message: ResourceMessageType, from: SocketAddr) -> ResourceMessageType {
-        tracing::info!("Node {} received Resource message", self.node.id.bold().green());
+        tracing::debug!("Node {} received Resource message", self.node.id.bold().green());
         self.node.handle_message(message, from).await.unwrap()
     }
 
     async fn handle_cmh_msg(self, _: context::Context, message: CmhMessageType, from: SocketAddr) -> CmhMessageType {
-        tracing::info!("Node {} received CMH message", self.node.id.bold().green());
+        tracing::debug!("Node {} received CMH message", self.node.id.bold().green());
         self.node.handle_cmh_message(message, from).await.unwrap()
     }
 

@@ -1,19 +1,20 @@
 #!/bin/bash
 
-# Hardcoded list of IP:port combinations
+# Configuration
 declare -a servers=("127.0.0.1:2010" "127.0.0.1:2020" "127.0.0.1:2030" "127.0.0.1:2040" "127.0.0.1:2050")
 
-# Function to send a GET request
+# Helper Functions
 send_get_request() {
     local url=$1
     curl -X GET "$url"
+    echo
 }
 
-# Function to send a POST request
 send_post_request() {
     local url=$1
     local json=$2
     curl -X POST -H "Content-Type: application/json" -d "$json" "$url"
+    echo
 }
 
 increment_port() {
@@ -23,169 +24,156 @@ increment_port() {
     echo "$ip:$((port + 1))"
 }
 
-echo "Enter the request type (g for GET /health, p for GET /status, j for join) and server indices:"
-echo "Example: g 0 (GET /health from server 0), p 1 (POST /status to server 1), j 0 2 (join server 0 to server 2)"
-# Main script logic
-while true; do
-    echo "Available servers:"
+print_help() {
+    echo "Commands:"
+    echo "g <idx>                  - Get health status"
+    echo "s <idx>                  - Get node status"
+    echo "j <from_idx> <to_idx>    - Join nodes"
+    echo "l <idx>                  - Node leaves"
+    echo "k <idx>                  - Kill node"
+    echo "r <idx>                  - Revive node"
+    echo "acq <idx> <resource>     - Acquire resource"
+    echo "rel <idx> <resource>     - Release resource"
+    echo "det <idx>                - Start detection"
+    echo "wait <idx> <target_idx>  - Wait for message"
+    echo "active <idx>             - Set active"
+    echo "passive <idx>            - Set passive"
+    echo "delay <idx> <ms>         - Set delay"
+    echo "h                        - Help"
+    echo "q                        - Quit"
+}
+
+print_servers() {
+    echo "Available nodes:"
     for i in "${!servers[@]}"; do
         echo "$i: ${servers[$i]}"
     done
+}
 
-    echo "Enter the request type (g/s/j/l/k) and server indices:"
-    read -r request_type arg1 arg2
+# Main Loop
+while true; do
+    echo -e "\nEnter command (h for help):"
+    print_servers
+    read -r cmd arg1 arg2
 
-    case $request_type in
+    case $cmd in
+        h)
+            print_help
+            ;;
+        q)
+            exit 0
+            ;;
         g)
-            # GET /health request
             if [[ -z "${servers[$arg1]}" ]]; then
-                echo "Invalid index. Please enter a valid server index."
+                echo "Invalid node index"
                 continue
             fi
             url="http://$(increment_port "${servers[$arg1]}")/health"
-            echo "Sending GET request to $url"
             send_get_request "$url"
             ;;
         s)
-            # GET /status request
             if [[ -z "${servers[$arg1]}" ]]; then
-                echo "Invalid index. Please enter a valid server index."
+                echo "Invalid node index"
                 continue
             fi
             url="http://$(increment_port "${servers[$arg1]}")/status"
-            echo "Sending GET request to $url"
             send_get_request "$url"
             ;;
         j)
-            # Join request
             if [[ -z "${servers[$arg1]}" || -z "${servers[$arg2]}" ]]; then
-                echo "Invalid indices. Please enter valid server indices."
+                echo "Invalid node indices"
                 continue
             fi
             url="http://$(increment_port "${servers[$arg1]}")/joinother"
-            json="{\"address\": \"${servers[$arg2]}\"}"  # Original port in payload
-            echo "Sending POST request to $url with JSON: $json"
+            json="{\"address\": \"${servers[$arg2]}\"}"
             send_post_request "$url" "$json"
             ;;
         l)
-            # POST /leave request
             if [[ -z "${servers[$arg1]}" ]]; then
-                echo "Invalid index. Please enter a valid server index."
+                echo "Invalid node index"
                 continue
             fi
             url="http://$(increment_port "${servers[$arg1]}")/leave"
-            echo "Sending POST request to $url"
             send_post_request "$url"
             ;;
         k)
-            # POST /kill request
             if [[ -z "${servers[$arg1]}" ]]; then
-                echo "Invalid index. Please enter a valid server index."
+                echo "Invalid node index"
                 continue
             fi
             url="http://$(increment_port "${servers[$arg1]}")/kill"
-            echo "Sending POST request to $url"
             send_post_request "$url"
             ;;
         r)
-            # POST /revive request
             if [[ -z "${servers[$arg1]}" ]]; then
-                echo "Invalid index. Please enter a valid server index."
+                echo "Invalid node index"
                 continue
             fi
             url="http://$(increment_port "${servers[$arg1]}")/revive"
-            echo "Sending POST request to $url"
             send_post_request "$url"
             ;;
-        c)
-            # Create the topology by sending join requests
-            ;;
-        m)
-            # Sends a message
-            if [[ -z "${servers[$arg1]}" ]]; then
-                echo "Invalid index. Please enter a valid server index."
-                continue
-            fi
-            url="http://$(increment_port "${servers[$arg1]}")/msg"
-             echo "Sending POST request to $url"
-             send_post_request "$url"
-             ;;
         acq)
-            # Sends a request
-            if [[ -z "${servers[$arg1]}" ]]; then
-                echo "Invalid index. Please enter a valid server index."
+            if [[ -z "${servers[$arg1]}" || -z "$arg2" ]]; then
+                echo "Usage: acq <node_idx> <resource>"
                 continue
             fi
             url="http://$(increment_port "${servers[$arg1]}")/acquire"
             json="{\"resource\": \"$arg2\"}"
-             echo "Sending POST request to $url"
-             send_post_request "$url" "$json"
-             ;;
+            send_post_request "$url" "$json"
+            ;;
         rel)
-            # Sends a request
-            if [[ -z "${servers[$arg1]}" ]]; then
-                echo "Invalid index. Please enter a valid server index."
+            if [[ -z "${servers[$arg1]}" || -z "$arg2" ]]; then
+                echo "Usage: rel <node_idx> <resource>"
                 continue
             fi
             url="http://$(increment_port "${servers[$arg1]}")/release"
             json="{\"resource\": \"$arg2\"}"
-             echo "Sending POST request to $url"
-             send_post_request "$url" "$json"
-             ;;
+            send_post_request "$url" "$json"
+            ;;
         det)
-            # Sends a request
             if [[ -z "${servers[$arg1]}" ]]; then
-                echo "Invalid index. Please enter a valid server index."
+                echo "Invalid node index"
                 continue
             fi
             url="http://$(increment_port "${servers[$arg1]}")/detection/start"
-             echo "Sending POST request to $url"
-             send_post_request "$url"
-             ;;
+            send_post_request "$url"
+            ;;
         wait)
-            # Sends a request
-            if [[ -z "${servers[$arg1]}" ]]; then
-                echo "Invalid index. Please enter a valid server index."
+            if [[ -z "${servers[$arg1]}" || -z "${servers[$arg2]}" ]]; then
+                echo "Invalid node indices"
                 continue
             fi
             url="http://$(increment_port "${servers[$arg1]}")/waitForMessage"
-            json="{\"address\": \"${servers[$arg2]}\"}"  # Original port in payload
-             echo "Sending POST request to $url"
-             send_post_request "$url" "$json"
-             ;;
+            json="{\"address\": \"${servers[$arg2]}\"}"
+            send_post_request "$url" "$json"
+            ;;
         active)
-            # Sends a request
             if [[ -z "${servers[$arg1]}" ]]; then
-                echo "Invalid index. Please enter a valid server index."
+                echo "Invalid node index"
                 continue
             fi
             url="http://$(increment_port "${servers[$arg1]}")/setActive"
-             echo "Sending POST request to $url"
-             send_post_request "$url"
-             ;;
+            send_post_request "$url"
+            ;;
         passive)
-            # Sends a request
             if [[ -z "${servers[$arg1]}" ]]; then
-                echo "Invalid index. Please enter a valid server index."
+                echo "Invalid node index"
                 continue
             fi
             url="http://$(increment_port "${servers[$arg1]}")/setPassive"
-             echo "Sending POST request to $url"
-             send_post_request "$url"
-             ;;
+            send_post_request "$url"
+            ;;
         delay)
-            # Sends a request
-            if [[ -z "${servers[$arg1]}" ]]; then
-                echo "Invalid index. Please enter a valid server index."
+            if [[ -z "${servers[$arg1]}" || -z "$arg2" ]]; then
+                echo "Usage: delay <node_idx> <milliseconds>"
                 continue
             fi
             url="http://$(increment_port "${servers[$arg1]}")/delay"
-            json="{\"delay_ms\": \"$arg2\"}"
-             echo "Sending POST request to $url"
-             send_post_request "$url"
-             ;;
+            json="{\"delay_ms\": $arg2}"
+            send_post_request "$url" "$json"
+            ;;
         *)
-            echo "Invalid request type. Use 'g' for GET /health, 'p' for POST /status, or 'j' for join."
+            echo "Invalid command. Use 'h' for help."
             ;;
     esac
 done

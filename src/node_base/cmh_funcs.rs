@@ -34,7 +34,7 @@ impl Node {
             tracing::error!("Cannot start detection - node {} is active", self.id);
             return Ok(CmhMessageType::Error);
         }
-        tracing::info!("Starting detection for node {}", self.id);
+        tracing::info!("T: {}. Starting detection for node {}", self.lamport_time.read().unwrap(), self.id);
 
         let k = self.addr;
 
@@ -75,7 +75,7 @@ impl Node {
 
     // State Management
     pub async fn set_active(&self) -> Result<(), Box<dyn Error>> {
-        tracing::info!(" Node {} setting active", self.id);
+        tracing::info!("T: {}.  Node {} setting active", self.lamport_time.read().unwrap(), self.id);
         *self.is_active.write().unwrap() = true;
         // if someone is waiting for me, send them receiveMessage messages from permission queue
         self.waiting_messages_from.write().unwrap().clear();
@@ -86,7 +86,7 @@ impl Node {
             self.send_cmh_msg(msg, self.addr).await;
         }
         self.permission_queue.write().unwrap().clear();
-        tracing::info!("Node {} is now active", self.id);
+        tracing::info!("T: {}. Node {} is now active", self.lamport_time.read().unwrap(), self.id);
         Ok(())
     }
 
@@ -104,13 +104,13 @@ impl Node {
         let msg = CmhMessageType::RequestPermission(from);
         match self.send_cmh_msg(msg, self.addr).await {
             CmhMessageType::GrantPermission(addr) => {
-                tracing::info!("Node {} granted permission to {}", from, self.id);
+                tracing::info!("T: {}. Node {} granted permission to {}", self.lamport_time.read().unwrap(), from, self.id);
                 self.waiting_messages_from.write().unwrap().remove(&from);
                 *self.is_active.write().unwrap() = true;
                 Ok(CmhMessageType::Success)
             },
             CmhMessageType::DenyPermission => {
-                tracing::info!("Node {} denied permission to {}", self.id, from);
+                tracing::info!("T: {}, Node {} denied permission to {}", self.lamport_time.read().unwrap(), self.id, from);
                 Ok(CmhMessageType::Success)
             },
             CmhMessageType::Error => Err("Error sending message".into()),
@@ -129,7 +129,7 @@ impl Node {
     }
 
     pub async fn handle_cmh_message(&self, msg: CmhMessageType, from: SocketAddr) -> Result<CmhMessageType, Box<dyn Error>> {
-        tracing::info!("Node {} received CMH message from {}: {:?}", self.id, from, msg);
+        tracing::info!("T: {}. Node {} received CMH message from {}: {:?}", self.lamport_time.read().unwrap(), self.id, from, msg);
 
         // if from == self.addr {
         //     tracing::info!("Node {} received message from itself", self.id);
@@ -139,7 +139,7 @@ impl Node {
         match msg {
             CmhMessageType::RequestPermission(addr) => {
                 if addr == self.addr {
-                    tracing::info!("Node {} received permission request from {}", self.id, from);
+                    tracing::info!("T: {}. Node {} received permission request from {}", self.lamport_time.read().unwrap(), self.id, from);
                     if *self.is_active.read().unwrap() {
                         tracing::debug!("Node {} is active - granting permission to {}", self.id, from);
                         Ok(CmhMessageType::GrantPermission(from))
@@ -155,7 +155,7 @@ impl Node {
             },
             CmhMessageType::GrantPermission(addr) => {
                 if addr == self.addr {
-                    tracing::info!("Node {} received permission from {}", self.id, from);
+                    tracing::info!("T: {}. Node {} received permission from {}", self.lamport_time.read().unwrap(), self.id, from);
                     self.handle_permission_from(from).await
                 } else {
                     tracing::debug!("Node {} forwarding permission to {}", self.id, addr);
@@ -192,7 +192,7 @@ impl Node {
             tracing::debug!("Node {} is active - ignoring probe from {}", self.id, probe.k);
             return Ok(CmhMessageType::Success);
         }
-        tracing::info!("Handling probe from {} for node {}", probe.j, probe.k);
+        tracing::info!("T: {}. Handling probe from {} for node {}", self.lamport_time.read().unwrap(), probe.j, probe.k);
         tracing::debug!("Probe: {:?}", probe);
 
         let test_num = {
@@ -272,7 +272,6 @@ impl Node {
         let (is_zero, is_initiator, parent) = {
             // Decrement counter
             let mut count = self.probe_count.write().unwrap();
-            tracing::debug!("{:?}", count);
             tracing::debug!("~`~ Node {} probe count for {} is {}", self.id, k, count.get(&k).unwrap());
             if let Some(n) = count.get_mut(&k) {
                 *n -= 1;
@@ -295,7 +294,7 @@ impl Node {
         if is_zero {
             tracing::debug!("Node {} probe count for {} is zero", self.id, k);
             if is_initiator {
-                tracing::info!("DEADLOCK DETECTED at node {}", self.id);
+                tracing::info!("T: {}. DEADLOCK DETECTED at node {}", self.lamport_time.read().unwrap(), self.id);
             } else if let Some(parent_addr) = parent {
                 tracing::debug!("Node {} sending probe answer to {}: {} {} {} {}", self.id, parent_addr, k, m, i, parent_addr);
                 self.send_cmh_msg(

@@ -104,7 +104,7 @@ impl Node {
     pub fn set_delay(&self, delay_ms: u64) {
         tracing::debug!("Setting delay to {}ms for node {}", delay_ms, self.id);
         let mut delay_lock = self.message_delay.write().unwrap();
-        *delay_lock = Duration::from_millis(0);
+        *delay_lock = Duration::from_millis(delay_ms);
     }
     
     pub fn print_status(&self) {
@@ -150,7 +150,7 @@ impl Node {
             let neighbor_info = self.neighbor_info.read().unwrap();
             neighbor_info.next
         };
-        // tracing::debug!("Node {} sending message to {} with delay {}ms", self.id.bold().green(), next.to_string().bold().green(), self.message_delay.read().unwrap().as_millis());
+        tracing::debug!("Node {} sending message to {} with delay {}ms", self.id.bold().green(), next.to_string().bold().green(), self.message_delay.read().unwrap().as_millis());
         let delay = *self.message_delay.read().unwrap();
         self.increment_lamport();
         tokio::time::sleep(delay).await;
