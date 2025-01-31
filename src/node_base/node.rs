@@ -17,7 +17,6 @@ pub struct ResourceState {
     pub request_queue: Vec<SocketAddr>,
 }
 
-// TODO: Add a unique generated id
 #[derive(Debug)]
 pub struct Node {
     pub id: String,

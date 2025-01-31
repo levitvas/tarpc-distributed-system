@@ -158,7 +158,6 @@ impl NodeRpc for NodeRpcServer {
     }
 
     async fn missing_node(self, context: Context, missing_node: SocketAddr) -> bool {
-        // TODO: Its not finished
         tracing::debug!("Node {} fixing topology with missing node: {}", self.node.id.bold().green(), missing_node.to_string().bold().red());
         let next = self.node.neighbor_info.read().unwrap().next;
         let nnext = self.node.neighbor_info.read().unwrap().nnext;
