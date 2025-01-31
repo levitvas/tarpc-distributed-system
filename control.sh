@@ -100,6 +100,90 @@ while true; do
         c)
             # Create the topology by sending join requests
             ;;
+        m)
+            # Sends a message
+            if [[ -z "${servers[$arg1]}" ]]; then
+                echo "Invalid index. Please enter a valid server index."
+                continue
+            fi
+            url="http://$(increment_port "${servers[$arg1]}")/msg"
+             echo "Sending POST request to $url"
+             send_post_request "$url"
+             ;;
+        acq)
+            # Sends a request
+            if [[ -z "${servers[$arg1]}" ]]; then
+                echo "Invalid index. Please enter a valid server index."
+                continue
+            fi
+            url="http://$(increment_port "${servers[$arg1]}")/acquire"
+            json="{\"resource\": \"$arg2\"}"
+             echo "Sending POST request to $url"
+             send_post_request "$url" "$json"
+             ;;
+        rel)
+            # Sends a request
+            if [[ -z "${servers[$arg1]}" ]]; then
+                echo "Invalid index. Please enter a valid server index."
+                continue
+            fi
+            url="http://$(increment_port "${servers[$arg1]}")/release"
+            json="{\"resource\": \"$arg2\"}"
+             echo "Sending POST request to $url"
+             send_post_request "$url" "$json"
+             ;;
+        det)
+            # Sends a request
+            if [[ -z "${servers[$arg1]}" ]]; then
+                echo "Invalid index. Please enter a valid server index."
+                continue
+            fi
+            url="http://$(increment_port "${servers[$arg1]}")/detection/start"
+             echo "Sending POST request to $url"
+             send_post_request "$url"
+             ;;
+        wait)
+            # Sends a request
+            if [[ -z "${servers[$arg1]}" ]]; then
+                echo "Invalid index. Please enter a valid server index."
+                continue
+            fi
+            url="http://$(increment_port "${servers[$arg1]}")/waitForMessage"
+            json="{\"address\": \"${servers[$arg2]}\"}"  # Original port in payload
+             echo "Sending POST request to $url"
+             send_post_request "$url" "$json"
+             ;;
+        active)
+            # Sends a request
+            if [[ -z "${servers[$arg1]}" ]]; then
+                echo "Invalid index. Please enter a valid server index."
+                continue
+            fi
+            url="http://$(increment_port "${servers[$arg1]}")/setActive"
+             echo "Sending POST request to $url"
+             send_post_request "$url"
+             ;;
+        passive)
+            # Sends a request
+            if [[ -z "${servers[$arg1]}" ]]; then
+                echo "Invalid index. Please enter a valid server index."
+                continue
+            fi
+            url="http://$(increment_port "${servers[$arg1]}")/setPassive"
+             echo "Sending POST request to $url"
+             send_post_request "$url"
+             ;;
+        delay)
+            # Sends a request
+            if [[ -z "${servers[$arg1]}" ]]; then
+                echo "Invalid index. Please enter a valid server index."
+                continue
+            fi
+            url="http://$(increment_port "${servers[$arg1]}")/delay"
+            json="{\"delay_ms\": \"$arg2\"}"
+             echo "Sending POST request to $url"
+             send_post_request "$url"
+             ;;
         *)
             echo "Invalid request type. Use 'g' for GET /health, 'p' for POST /status, or 'j' for join."
             ;;

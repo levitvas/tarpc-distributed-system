@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::error::Error;
 use std::net::SocketAddr;
 use std::sync::{Arc};
 use std::time::{Duration, Instant};
@@ -7,19 +8,18 @@ use tarpc::{client, context};
 use tarpc::tokio_serde::formats::Json;
 use tokio::sync::RwLock;
 use crate::node_base::node::NeighborInfo;
+use crate::rpc_base::service::NodeRpcClient;
 use super::{service};
 
 // Manager that will return the client for an ip address
 #[derive(Clone, Debug)]
 pub struct RpcClientManager {
-    own_addr: SocketAddr,
     clients: Arc<RwLock<HashMap<SocketAddr, service::NodeRpcClient>>>,
 }
 
 impl RpcClientManager {
     pub fn new(addr: SocketAddr) -> Self {
         Self {
-            own_addr: addr,
             clients: Arc::new(RwLock::new(HashMap::new())),
         }
     }
@@ -63,52 +63,10 @@ impl RpcClientManager {
         Ok(clients.get(&addr).unwrap().clone())
     }
 
-    pub async fn send_msg(&self, addr: SocketAddr, msg: String) -> Result<String, Box<dyn std::error::Error>> {
-        let client = self.get_client(addr).await?;
+    pub async fn get_c(&self, addr: SocketAddr) -> (Result<NodeRpcClient, ()>, context::Context) {
+        let client = self.get_client(addr).await.map_err(|_| ());
         let mut ctx = context::current();
-        // Add deadline to request, after five seconds the request will be cancelled
-        ctx.deadline = Instant::now() + Duration::from_secs(5);
-
-        match client.msg(ctx, msg).await {
-            Ok(response) => Ok(response),
-            Err(e) => Err(format!("RPC error: {}", e).into()),
-        }
-    }
-    
-    // Client will invoke other_joining on the server 
-    pub async fn join_other(&self, addr: SocketAddr) -> Result<NeighborInfo, Box<dyn std::error::Error>> {
-        let client = self.get_client(addr).await?;
-        let mut ctx = context::current();
-        // Add deadline to request, after five seconds the request will be cancelled
-        ctx.deadline = Instant::now() + Duration::from_secs(5);
-
-        match client.other_joining(ctx, self.own_addr).await {
-            Ok(response) => Ok(response),
-            Err(e) => Err(format!("RPC error: {}", e).into()),
-        }
-    }
-
-    pub async fn leave_topology(&self) -> Result<(), Box<dyn std::error::Error>> {
-        let client = self.get_client(self.own_addr).await?;
-        let mut ctx = context::current();
-        // Add deadline to request, after five seconds the request will be cancelled
-        ctx.deadline = Instant::now() + Duration::from_secs(5);
-
-        match client.leave_topology(ctx).await {
-            Ok(response) => Ok(()),
-            Err(e) => Err(format!("RPC error: {}", e).into()),
-        }
-    }
-
-    // Fix topology method
-    pub async fn missing_node(&self, missing_node: SocketAddr) -> Result<(), Box<dyn std::error::Error>> {
-        let client = self.get_client(self.own_addr).await?;
-        let ctx = context::current();
-        
-        match client.missing_node(ctx, missing_node).await {
-            Ok(_) => Ok(()),
-            Err(e) => Err(format!("RPC error: {}", e).into()),
-        }
+        (client, ctx)
     }
     
 }

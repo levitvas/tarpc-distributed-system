@@ -6,7 +6,9 @@ use tarpc::{context};
 use tarpc::context::Context;
 use tarpc::server::{BaseChannel, Channel};
 use tarpc::tokio_serde::formats::Json;
+use crate::node_base::cmh_funcs::CmhMessageType;
 use crate::node_base::node::{NeighborInfo, Node};
+use crate::node_base::resources::ResourceMessageType;
 use super::service::NodeRpc;
 
 #[derive(Clone)]
@@ -26,9 +28,14 @@ impl NodeRpc for NodeRpcServer {
         tracing::debug!("Node {} received heartbeat", self.node.id.bold().green());
         true
     }
-    async fn msg(self, _: context::Context, message: String) -> String {
-        tracing::info!("Node {} received message: {}", self.node.id.bold().green(), message.bold().yellow());
-        format!("Hello back from {}", self.node.id)
+    async fn handle_resource_msg(self, _: context::Context, message: ResourceMessageType, from: SocketAddr) -> ResourceMessageType {
+        tracing::info!("Node {} received Resource message", self.node.id.bold().green());
+        self.node.handle_message(message, from).await.unwrap()
+    }
+
+    async fn handle_cmh_msg(self, _: context::Context, message: CmhMessageType, from: SocketAddr) -> CmhMessageType {
+        tracing::info!("Node {} received CMH message", self.node.id.bold().green());
+        self.node.handle_cmh_message(message, from).await.unwrap()
     }
 
     async fn other_joining(self, _context: Context, addr: SocketAddr) -> NeighborInfo {
@@ -126,16 +133,16 @@ impl NodeRpc for NodeRpcServer {
         }
     }
 
-    async fn change_prev(self, _context: Context, prev: SocketAddr) -> bool {
+    async fn change_prev(self, _context: Context, prev: SocketAddr) -> SocketAddr {
         tracing::debug!("Node {} changing Prev to {}", self.node.id.bold().green(), prev.to_string().bold().yellow());
         match self.node.neighbor_info.write() {
             Ok(mut neighbor_info) => {
                 neighbor_info.prev = prev;
-                true
+                neighbor_info.next
             },
             Err(e) => {
                 tracing::error!("Error changing Prev: {} in Node {}", e, self.node.id.bold().green());
-                false
+                SocketAddr::new([0, 0, 0, 0].into(), 0)
             }
         }
     }
@@ -151,26 +158,29 @@ impl NodeRpc for NodeRpcServer {
     }
 
     async fn missing_node(self, context: Context, missing_node: SocketAddr) -> bool {
+        // TODO: Its not finished
         tracing::debug!("Node {} fixing topology with missing node: {}", self.node.id.bold().green(), missing_node.to_string().bold().red());
-        if !self.node.repairing.read().unwrap().clone() {
-            tracing::info!("Node {} is already repairing", self.node.id.bold().red());
-            return true;
+        let next = self.node.neighbor_info.read().unwrap().next;
+        let nnext = self.node.neighbor_info.read().unwrap().nnext;
+        let prev = self.node.neighbor_info.read().unwrap().prev;
+        
+        if missing_node == self.node.neighbor_info.read().unwrap().next {
+            // its for me
+            // to my nnext send msg ChPrev with myaddr -> my nnext = next
+            self.node.neighbor_info.write().unwrap().next = nnext;
+            self.node.neighbor_info.write().unwrap().nnext = self.node.rpc.get_client(nnext).await.unwrap().change_prev(context, next).await.unwrap();
+            // to my prev send msg ChNNext to my.next
+            if prev == next {
+                // only 2 nodes
+                self.node.neighbor_info.write().unwrap().prev = nnext;
+                true
+            } else {
+                // 3+ nodes
+                self.node.rpc.get_client(prev).await.unwrap().change_nnext(context, nnext).await.unwrap()
+            }
         } else {
-            // self.node.repairing = true;
-            true
-
-            // match self.rpc.missing_node(missing_node_addr).await {
-            //     Ok(_) => {
-            //         tracing::info!("Topology was repaired");
-            //         self.repairing = false;
-            //         Ok(())
-            //     }
-            //     Err(e) => {
-            //         tracing::error!("Error repairing topology: {}", e);
-            //         self.repairing = false;
-            //         Err(e)
-            //     }
-            // }
+            // send to next node
+            self.node.rpc.get_client(next).await.unwrap().missing_node(context, missing_node).await.unwrap()
         }
     }
 }

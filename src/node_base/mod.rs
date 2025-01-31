@@ -1,2 +1,3 @@
 pub(crate) mod node;
-mod cmh_funcs;
+pub(crate) mod cmh_funcs;
+pub(crate) mod resources;

@@ -25,7 +25,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Get command line arguments
     let args: Vec<String> = std::env::args().collect();
-    if args.len() != 3 {
+    if args.len() != 4 {
         tracing::error!("Incorrect arguments provided");
         tracing::info!("Usage: {} <ip> <port>", args[0]);
         std::process::exit(1);
@@ -33,11 +33,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let ip = &args[1];
     let port: u16 = args[2].parse()?;
+    
+    let temp_resource = &args[3];
+    
     let rpc_addr: SocketAddr = format!("{}:{}", ip, port).parse()?;
     tracing::info!("Starting node with address: {}", rpc_addr);
 
     // Create node and start server
     let node = node::Node::new(format!("node_{}", port), rpc_addr);
+    node.assign_resource(temp_resource.to_string()).await.expect("TODO: panic message");
     
     let rpc_node = node.clone();
     tokio::spawn(async move {
