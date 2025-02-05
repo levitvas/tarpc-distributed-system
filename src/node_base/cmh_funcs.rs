@@ -25,14 +25,14 @@ pub enum CmhMessageType {
     GrantPermission(SocketAddr),
 
     // Error Messages
-    Success,
-    Error
+    Success(u64),
+    Error(u64)
 }
 impl Node {
     pub async fn start_detection(&self) -> Result<CmhMessageType, Box<dyn Error>> {
         if *self.is_active.read().unwrap() {
             tracing::error!("Cannot start detection - node {} is active", self.id);
-            return Ok(CmhMessageType::Error);
+            return Ok(CmhMessageType::Error(*self.lamport_time.read().unwrap()));
         }
         tracing::info!("T: {}. Starting detection for node {}", self.lamport_time.read().unwrap(), self.id);
 
@@ -41,7 +41,7 @@ impl Node {
         {
             let mut last = self.last_test.write().unwrap();
             *last.entry(k).or_insert(0) += 1;
-            let test_num = last[&k];
+            let _test_num = last[&k];
 
             let mut wait = self.wait_status.write().unwrap();
             wait.insert(k, true);
@@ -69,7 +69,7 @@ impl Node {
             }
         }
 
-        Ok(CmhMessageType::Success)
+        Ok(CmhMessageType::Success(*self.lamport_time.read().unwrap()))
     }
 
 
@@ -103,17 +103,17 @@ impl Node {
         // now send a perm request, this is just dummy communication
         let msg = CmhMessageType::RequestPermission(from);
         match self.send_cmh_msg(msg, self.addr).await {
-            CmhMessageType::GrantPermission(addr) => {
+            CmhMessageType::GrantPermission(_addr) => {
                 tracing::info!("T: {}. Node {} granted permission to {}", self.lamport_time.read().unwrap(), from, self.id);
                 self.waiting_messages_from.write().unwrap().remove(&from);
                 *self.is_active.write().unwrap() = true;
-                Ok(CmhMessageType::Success)
+                Ok(CmhMessageType::Success(*self.lamport_time.read().unwrap()))
             },
             CmhMessageType::DenyPermission => {
                 tracing::info!("T: {}, Node {} denied permission to {}", self.lamport_time.read().unwrap(), self.id, from);
-                Ok(CmhMessageType::Success)
+                Ok(CmhMessageType::Success(*self.lamport_time.read().unwrap()))
             },
-            CmhMessageType::Error => Err("Error sending message".into()),
+            CmhMessageType::Error(_lamp) => Err("Error sending message".into()),
             _ => todo!(),
         }
     }
@@ -125,7 +125,7 @@ impl Node {
             self.set_active().await?;
         }
 
-        Ok(CmhMessageType::Success)
+        Ok(CmhMessageType::Success(*self.lamport_time.read().unwrap()))
     }
 
     pub async fn handle_cmh_message(&self, msg: CmhMessageType, from: SocketAddr) -> Result<CmhMessageType, Box<dyn Error>> {
@@ -149,6 +149,7 @@ impl Node {
                     }
 
                 } else {
+                    tracing::debug!("Node {} forwarding permission request to {}", self.id, addr);
                     // Send to next node
                     Ok(self.send_cmh_msg(CmhMessageType::RequestPermission(addr), from).await)
                 }
@@ -182,7 +183,7 @@ impl Node {
                 }
             },
             CmhMessageType::DetectionStart => self.start_detection().await,
-            _ => Ok(CmhMessageType::Error)
+            _ => Ok(CmhMessageType::Error(*self.lamport_time.read().unwrap()))
         }
     }
 
@@ -190,7 +191,7 @@ impl Node {
     pub async fn handle_probe(&self, probe: ProbeMessage) -> Result<CmhMessageType, Box<dyn Error>> {
         if *self.is_active.read().unwrap() {
             tracing::debug!("Node {} is active - ignoring probe from {}", self.id, probe.k);
-            return Ok(CmhMessageType::Success);
+            return Ok(CmhMessageType::Success(*self.lamport_time.read().unwrap()));
         }
         tracing::info!("T: {}. Handling probe from {} for node {}", self.lamport_time.read().unwrap(), probe.j, probe.k);
         tracing::debug!("Probe: {:?}", probe);
@@ -243,7 +244,7 @@ impl Node {
             ).await;
         }
 
-        Ok(CmhMessageType::Success)
+        Ok(CmhMessageType::Success(*self.lamport_time.read().unwrap()))
     }
 
     async fn handle_probe_answer(&self, k: SocketAddr, m: u64, r: SocketAddr, i: SocketAddr)
@@ -251,7 +252,7 @@ impl Node {
     {
         // Check if active
         if *self.is_active.read().unwrap() {
-            return Ok(CmhMessageType::Success);
+            return Ok(CmhMessageType::Success(*self.lamport_time.read().unwrap()));
         }
 
         tracing::debug!("~~ Node {} received probe answer {} {} {} {}", self.id, k, m, r, i);
@@ -265,7 +266,7 @@ impl Node {
         };
 
         if !should_process {
-            return Ok(CmhMessageType::Success);
+            return Ok(CmhMessageType::Success(*self.lamport_time.read().unwrap()));
         }
 
         // Update probe count and check if it's zero
@@ -310,6 +311,6 @@ impl Node {
             tracing::debug!("Node {} probe count for {} is not zero!!!!!", self.id, k);
         }
 
-        Ok(CmhMessageType::Success)
+        Ok(CmhMessageType::Success(*self.lamport_time.read().unwrap()))
     }
 }

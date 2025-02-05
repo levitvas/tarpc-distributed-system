@@ -71,7 +71,7 @@ impl Node {
             }),
             lamport_time: RwLock::new(0),
             repairing: RwLock::new(false),
-            rpc: RpcClientManager::new(addr),
+            rpc: RpcClientManager::new(),
             stop_signal,
             
             owned_resources: RwLock::new(HashMap::new()),
@@ -90,7 +90,7 @@ impl Node {
         })
     }
 
-    pub fn increment_lamport(&self) -> u64{
+    pub fn increment_lamport(&self) -> u64 {
         *self.lamport_time.write().unwrap() += 1;
         *self.lamport_time.read().unwrap()
     }
@@ -107,6 +107,7 @@ impl Node {
     }
     
     pub fn print_status(&self) {
+        tracing::info!("{} Node {}", "STATUS".on_yellow().bold().bright_red(), self.id.bold().green());
         tracing::info!("Node id: {}, addr: {}", self.id.bold().green(), self.addr.to_string().bold().green());
         // now print the neighbor info
         let neighbor_info = self.neighbor_info.read().unwrap();
@@ -123,7 +124,7 @@ impl Node {
         }
         // show resource requests
         let requests = self.waiting_for.read().unwrap();
-        tracing::info!("Resource requests: {:?}", requests);
+        tracing::info!("Resource requests: {:?}\n", requests);
         
         // show deadlock stuff
         tracing::info!("Active: {}, Waiting messages from: {:?}", *self.is_active.read().unwrap(), *self.waiting_messages_from.read().unwrap());
@@ -149,9 +150,7 @@ impl Node {
             let neighbor_info = self.neighbor_info.read().unwrap();
             neighbor_info.next
         };
-        tracing::debug!("Node {} sending message to {} with delay {}ms", self.id.bold().green(), next.to_string().bold().green(), self.message_delay.read().unwrap().as_millis());
         let delay = *self.message_delay.read().unwrap();
-        self.increment_lamport();
         tokio::time::sleep(delay).await;
 
         let (client_result, ctx) = self.rpc.get_c(next).await;
@@ -164,10 +163,11 @@ impl Node {
                 }
                 Err(e) => {
                     tracing::error!("Error sending message to {}: {}", next.to_string().bold().red(), e);
+                    self.repair_topology(next).await;
                     ResourceMessageType::Error
                 }
             }
-        } else if let Err(e) = client_result {
+        } else if let Err(_e) = client_result {
             tracing::error!("Error getting client for {}", next.to_string().bold().red());
             self.repair_topology(next).await;
             ResourceMessageType::Error
@@ -184,39 +184,42 @@ impl Node {
         };
         // tracing::debug!("Node {} sending message to {} with delay {}ms", self.id.bold().green(), next.to_string().bold().green(), self.message_delay.read().unwrap().as_millis());
         let delay = *self.message_delay.read().unwrap();
-        self.increment_lamport();
         tokio::time::sleep(delay).await;
 
         let (client_result, ctx) = self.rpc.get_c(next).await;
         if let Ok(client) = client_result {
-            self.increment_lamport();
-            match client.handle_cmh_msg(ctx, msg, from).await {
+            let lamport_time = self.increment_lamport();
+            match client.handle_cmh_msg(ctx, msg, from, lamport_time).await {
                 Ok(response) => {
                     // tracing::info!("Node {} sent message to {}", self.id.bold().green(), next.to_string().bold().green());
+                    if let CmhMessageType::Success(new_lamport) = response {
+                        self.update_clock(new_lamport);
+                    }
                     response
                 }
                 Err(e) => {
                     tracing::error!("Error sending message to {}: {}", next.to_string().bold().red(), e);
-                    CmhMessageType::Error
+                    self.repair_topology(next).await;
+                    CmhMessageType::Error(*self.lamport_time.read().unwrap())
                 }
             }
-        } else if let Err(e) = client_result {
+        } else if let Err(_e) = client_result {
             tracing::error!("Error getting client for {}", next.to_string().bold().red());
             self.repair_topology(next).await;
-            CmhMessageType::Error
+            CmhMessageType::Error(*self.lamport_time.read().unwrap())
         }
         else {
-            CmhMessageType::Error
+            CmhMessageType::Error(*self.lamport_time.read().unwrap())
         }
     }
 
-    async fn repair_topology(&self, missing_node: SocketAddr) {
+    pub async fn repair_topology(&self, missing_node: SocketAddr) {
         tracing::info!("Node {} repairing topology with missing node: {}", self.id.bold().green(), missing_node.to_string().bold().red());
         if *self.repairing.read().unwrap() {
             return;
         }
         let (client, ctx) = self.rpc.get_c(self.addr).await;
-        match client.unwrap().missing_node(ctx, missing_node).await {
+        match client.unwrap().missing_node(ctx, self.addr, missing_node).await {
             Ok(_) => {
                 tracing::info!("Node {} repaired topology with missing node: {}", self.id.bold().green(), missing_node.to_string().bold().red());
             }
@@ -227,10 +230,22 @@ impl Node {
 
         *self.repairing.write().unwrap() = false;
     }
+    
+    pub async fn delete_dependencies(&self, missing_node: SocketAddr) {
+        self.waiting_messages_from.write().unwrap().remove(&missing_node);
+        if self.waiting_messages_from.read().unwrap().is_empty() {
+            *self.is_active.write().unwrap() = true;
+        }
+        self.permission_queue.write().unwrap().remove(&missing_node);
+        self.rpc.delete_client(missing_node).await;
+    }
 
     // leave - inform neighbors and update their connections
     pub async fn leave(&self) -> Result<(), Box<dyn Error>> {
         tracing::info!("Node {} leaving", self.id.bold().red());
+        self.waiting_messages_from.write().unwrap().clear();
+        self.permission_queue.write().unwrap().clear();
+        *self.is_active.write().unwrap() = true;
 
         let (client, ctx) = self.rpc.get_c(self.addr).await;
         match client.unwrap().leave_topology(ctx).await {
@@ -268,6 +283,12 @@ impl Node {
                     tracing::error!("RPC server error: {}", e);
                 }
             });
+            
+            // clean dependencies
+            self.waiting_messages_from.write().unwrap().clear();
+            self.permission_queue.write().unwrap().clear();
+            *self.is_active.write().unwrap() = true;
+            
 
             // try to rejoin using the last known neighbor
             let last_known_prev = self.neighbor_info.read().unwrap().prev;

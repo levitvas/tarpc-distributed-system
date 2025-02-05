@@ -1,4 +1,3 @@
-use std::cmp::PartialEq;
 use std::error::Error;
 use std::net::SocketAddr;
 use super::node::{Node, ResourceState};
@@ -73,7 +72,7 @@ impl Node {
         let owner = self.find_resource_owner(&resource).await?;
         // self.set_passive().await?;
 
-        tracing::error!("Node {} got owner {}", self.id.bold().green(), resource.bold().green());
+        tracing::info!("Node {} got owner {}", self.id.bold().green(), resource.bold().green());
         let msg = Acquire(resource.clone());
         let response = self.send_resource_msg(msg, self.addr).await;
 
@@ -98,7 +97,7 @@ impl Node {
             tracing::error!("Node {} does not own resource {}", self.id.bold().red(), resource.bold().red());
             return Ok(());
         }
-        let owner = self.used_resources.write().unwrap().remove(&resource).unwrap();
+        let _owner = self.used_resources.write().unwrap().remove(&resource).unwrap();
         let msg = Release(resource.clone());
         self.send_resource_msg(msg, self.addr).await;
         Ok(())

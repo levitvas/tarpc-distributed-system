@@ -3,7 +3,6 @@ mod api_base;
 mod rpc_base;
 
 use std::net::SocketAddr;
-use std::sync::Arc;
 use tracing_subscriber::EnvFilter;
 use rpc_base::server;
 use crate::api_base::api;

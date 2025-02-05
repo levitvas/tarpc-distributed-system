@@ -7,7 +7,7 @@ use axum::routing::{get, post};
 use colored::Colorize;
 use serde::{Deserialize, Serialize};
 use crate::node_base::node::Node;
-use crate::node_base::resources::ResourceMessageType::{Acquire, Release, ResourceQuery};
+use crate::node_base::resources::ResourceMessageType::{ResourceQuery};
 
 #[derive(Debug, Serialize)]
 pub struct HealthResponse {
@@ -18,12 +18,12 @@ pub struct HealthResponse {
 
 #[derive(Debug, Deserialize)]
 pub struct DelayConfig {
-    delay_ms: String,
+    delay_ms: u64,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct KillReviveRequest {
-    node_id: String,
+    _node_id: String,
 }
 
 // Gracefully leave the topology
@@ -73,7 +73,7 @@ async fn set_delay(
     State(node): State<Arc<Node>>,
     Json(config): Json<DelayConfig>,
 ) -> StatusCode {
-    let delay_ms: u64 = config.delay_ms.parse().expect("Invalid time format");;
+    let delay_ms: u64 = config.delay_ms;
     tracing::debug!("Delay update requested for node {}: {}ms", node.id, delay_ms);
     node.set_delay(delay_ms);
     StatusCode::OK

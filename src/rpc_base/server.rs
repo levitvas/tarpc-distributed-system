@@ -33,13 +33,22 @@ impl NodeRpc for NodeRpcServer {
         self.node.handle_message(message, from).await.unwrap()
     }
 
-    async fn handle_cmh_msg(self, _: context::Context, message: CmhMessageType, from: SocketAddr) -> CmhMessageType {
+    async fn handle_cmh_msg(self, _: context::Context, message: CmhMessageType, from: SocketAddr, lamport: u64) -> CmhMessageType {
+        self.node.update_clock(lamport);
         tracing::debug!("Node {} received CMH message", self.node.id.bold().green());
         self.node.handle_cmh_message(message, from).await.unwrap()
     }
 
     async fn other_joining(self, _context: Context, addr: SocketAddr) -> NeighborInfo {
         tracing::debug!("Node {} received other_joining from {}", self.node.id.bold().green(), addr.to_string().bold().green());
+        
+        if self.node.neighbor_info.read().unwrap().next == addr {
+            tracing::info!("Node {} is already my next, so revive", addr.to_string().bold().green());
+            self.node.rpc.delete_client(addr).await; // we create a new one
+            // Basically reset the node, so it doesnt mess with anything
+            self.node.repair_topology(addr).await;
+        }
+        
         // Copy the values we need from the lock, then drop the guard
         let (mut tmp_neighbor, my_next, my_prev) = {
             let neighbor_info = self.node.neighbor_info.read().unwrap();
@@ -157,29 +166,44 @@ impl NodeRpc for NodeRpcServer {
         prev_client.change_nnext(_context, next).await.unwrap()
     }
 
-    async fn missing_node(self, context: Context, missing_node: SocketAddr) -> bool {
-        tracing::debug!("Node {} fixing topology with missing node: {}", self.node.id.bold().green(), missing_node.to_string().bold().red());
+    async fn missing_node(self, context: Context, from: SocketAddr, missing_node: SocketAddr) -> bool {
         let next = self.node.neighbor_info.read().unwrap().next;
+        
+        if self.node.addr == from && next != missing_node {
+            // instantly ends the cycle
+            tracing::info!("Finished sending missing node. Circle complete");
+            return true;
+        } else {
+            // handle the missing node
+            tracing::debug!("Node {} received missing node from {} will remove deps", self.node.id.bold().green(), from.to_string().bold().red());
+            self.node.delete_dependencies(missing_node).await;
+        }
+        
+        tracing::debug!("Node {} fixing topology with missing node: {}", self.node.id.bold().green(), missing_node.to_string().bold().red());
         let nnext = self.node.neighbor_info.read().unwrap().nnext;
         let prev = self.node.neighbor_info.read().unwrap().prev;
         
         if missing_node == self.node.neighbor_info.read().unwrap().next {
+            
+            self.node.rpc.delete_client(missing_node).await;            
             // its for me
             // to my nnext send msg ChPrev with myaddr -> my nnext = next
             self.node.neighbor_info.write().unwrap().next = nnext;
-            self.node.neighbor_info.write().unwrap().nnext = self.node.rpc.get_client(nnext).await.unwrap().change_prev(context, next).await.unwrap();
+            self.node.neighbor_info.write().unwrap().nnext = self.node.rpc.get_client(nnext).await.unwrap().change_prev(context, self.node.addr).await.unwrap();
             // to my prev send msg ChNNext to my.next
             if prev == next {
                 // only 2 nodes
                 self.node.neighbor_info.write().unwrap().prev = nnext;
-                true
             } else {
                 // 3+ nodes
-                self.node.rpc.get_client(prev).await.unwrap().change_nnext(context, nnext).await.unwrap()
+                self.node.rpc.get_client(prev).await.unwrap().change_nnext(context, nnext).await.unwrap();
             }
+            
+            // tell other nodes about the missing node, so that they can remove from dependency
+            self.node.rpc.get_client(nnext).await.unwrap().missing_node(context, from, missing_node).await.unwrap()
         } else {
             // send to next node
-            self.node.rpc.get_client(next).await.unwrap().missing_node(context, missing_node).await.unwrap()
+            self.node.rpc.get_client(next).await.unwrap().missing_node(context, from, missing_node).await.unwrap()
         }
     }
 }

@@ -1,13 +1,9 @@
 use std::collections::HashMap;
-use std::error::Error;
 use std::net::SocketAddr;
 use std::sync::{Arc};
-use std::time::{Duration, Instant};
-use colored::Colorize;
 use tarpc::{client, context};
 use tarpc::tokio_serde::formats::Json;
 use tokio::sync::RwLock;
-use crate::node_base::node::NeighborInfo;
 use crate::rpc_base::service::NodeRpcClient;
 use super::{service};
 
@@ -18,7 +14,7 @@ pub struct RpcClientManager {
 }
 
 impl RpcClientManager {
-    pub fn new(addr: SocketAddr) -> Self {
+    pub fn new() -> Self {
         Self {
             clients: Arc::new(RwLock::new(HashMap::new())),
         }
@@ -34,6 +30,10 @@ impl RpcClientManager {
         ).spawn();
 
         Ok(client)
+    }
+    
+    pub async fn delete_client(&self, addr: SocketAddr) {
+        self.clients.write().await.remove(&addr);
     }
 
     pub async fn get_client(&self, addr: SocketAddr) -> Result<service::NodeRpcClient, Box<dyn std::error::Error>> {
@@ -65,7 +65,7 @@ impl RpcClientManager {
 
     pub async fn get_c(&self, addr: SocketAddr) -> (Result<NodeRpcClient, ()>, context::Context) {
         let client = self.get_client(addr).await.map_err(|_| ());
-        let mut ctx = context::current();
+        let ctx = context::current();
         (client, ctx)
     }
     
